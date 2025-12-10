@@ -1,0 +1,24 @@
+# Pocket Option Trading Bot - Dependencies
+
+# Telegram Bot
+python-telegram-bot==20.7
+
+# Image Processing
+opencv-python==4.8.1.78
+Pillow==10.1.0
+numpy==1.24.3
+
+# OCR (Text Extraction)
+pytesseract==0.3.10
+
+# Database (built-in with Python)
+# sqlite3 - no installation needed
+
+# Logging (built-in with Python)
+# logging - no installation needed
+
+# Additional utilities (built-in)
+# hashlib - no installation needed
+# datetime - no installation needed
+# json - no installation needed
+# os - no installation needed
