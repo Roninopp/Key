@@ -1,6 +1,7 @@
 """
 MODULE 3: SIGNAL GENERATOR & DECISION ENGINE
 Combines price action + timing to generate UP/DOWN signals with confidence
+UPDATED: Lower threshold (40%+) for more trading opportunities
 """
 
 from dataclasses import dataclass
@@ -18,11 +19,12 @@ class SignalDirection(Enum):
     NO_TRADE = "⏸️ NO TRADE"
 
 class ConfidenceLevel(Enum):
-    VERY_HIGH = "VERY HIGH (85-100%)"
-    HIGH = "HIGH (75-84%)"
-    MODERATE = "MODERATE (65-74%)"
-    LOW = "LOW (55-64%)"
-    VERY_LOW = "TOO LOW (<55%)"
+    VERY_HIGH = "VERY HIGH (80-100%)"
+    HIGH = "HIGH (70-79%)"
+    MODERATE = "MODERATE (60-69%)"
+    MEDIUM = "MEDIUM (50-59%)"
+    LOW = "LOW (40-49%)"
+    VERY_LOW = "TOO LOW (<40%)"
 
 @dataclass
 class TradingSignal:
@@ -44,75 +46,89 @@ class TradingSignal:
 class SignalGenerator:
     """
     Main signal generation engine
-    Combines price action analysis + timing to generate signals
+    UPDATED: Lower minimum confidence to 40% for more signals
     """
     
     def __init__(self):
-        # Confidence thresholds
-        self.min_tradeable_confidence = 60  # Don't trade below this
-        self.high_confidence_threshold = 75
-        self.very_high_confidence_threshold = 85
+        # UPDATED: Lower thresholds
+        self.min_tradeable_confidence = 40  # Was 60 - NOW 40%
+        self.high_confidence_threshold = 70  # Was 75
+        self.very_high_confidence_threshold = 80  # Was 85
         
-        # Pattern weights (how much each pattern contributes to confidence)
+        # Pattern weights (UPDATED: More balanced)
         self.pattern_weights = {
-            'BULLISH_ENGULFING': 30,
-            'BEARISH_ENGULFING': 30,
-            'BULLISH_PIN_BAR': 25,
-            'BEARISH_PIN_BAR': 25,
+            'BULLISH_ENGULFING': 28,
+            'BEARISH_ENGULFING': 28,
+            'BULLISH_PIN_BAR': 24,
+            'BEARISH_PIN_BAR': 24,
             'HAMMER': 20,
             'SHOOTING_STAR': 20,
-            'MORNING_STAR': 28,
-            'EVENING_STAR': 28,
-            'INSIDE_BAR': 10,
+            'MORNING_STAR': 26,
+            'EVENING_STAR': 26,
+            'INSIDE_BAR': 12,
             'OUTSIDE_BAR': 15,
-            'DOJI': 5,  # Weak signal alone
+            'DOJI': 8,
+            'BULLISH_MOMENTUM': 18,  # NEW
+            'BEARISH_MOMENTUM': 18,  # NEW
+            'BULLISH_TREND': 16,     # NEW
+            'BEARISH_TREND': 16,     # NEW
         }
         
-        # Trend alignment bonus
-        self.trend_alignment_bonus = 20
-        self.trend_strength_multiplier = 0.3
-        
-        # Support/Resistance bonus
-        self.key_level_proximity_bonus = 15  # If near S/R
+        # Bonuses
+        self.trend_alignment_bonus = 18  # Was 20
+        self.trend_strength_multiplier = 0.25  # Was 0.3
+        self.key_level_proximity_bonus = 12  # Was 15
         
     def generate_signal(self, price_analysis, timing_info) -> TradingSignal:
         """
         Generate complete trading signal
-        
-        Args:
-            price_analysis: PriceActionAnalysis from Module 1
-            timing_info: TimingInfo from Module 2
-        
-        Returns:
-            TradingSignal with direction, confidence, and all details
+        UPDATED: More lenient signal generation
         """
         
-        # Step 1: Check if timing is valid
+        print(f"\n{'='*50}")
+        print(f"🎯 GENERATING SIGNAL")
+        print(f"{'='*50}")
+        
+        # Step 1: Check timing
         if not self._is_timing_valid(timing_info):
+            print("❌ Timing invalid")
             return self._create_no_trade_signal(
                 "Signal expired or invalid timing",
                 timing_info
             )
         
-        # Step 2: Analyze patterns and calculate base confidence
+        print(f"✅ Timing valid: {timing_info.signal_validity}")
+        
+        # Step 2: Analyze patterns
         direction, base_confidence, pattern_reasons = self._analyze_patterns(
             price_analysis.detected_patterns
         )
         
+        print(f"📊 Base analysis: {direction.value} @ {base_confidence:.0f}%")
+        print(f"   Patterns used: {len(pattern_reasons)}")
+        
+        # UPDATED: If no clear pattern, use trend as fallback
         if direction == SignalDirection.NO_TRADE:
+            print("⚠️ No patterns detected, using trend fallback...")
+            direction, base_confidence, pattern_reasons = self._fallback_trend_signal(
+                price_analysis
+            )
+        
+        if direction == SignalDirection.NO_TRADE:
+            print("❌ Still no clear signal after fallback")
             return self._create_no_trade_signal(
-                "No clear pattern detected",
+                "No clear trading opportunity detected",
                 timing_info
             )
         
-        # Step 3: Apply trend alignment adjustment
+        # Step 3: Apply bonuses
         trend_bonus, trend_aligned = self._calculate_trend_bonus(
             direction,
             price_analysis.trend,
             price_analysis.trend_strength
         )
+        print(f"📈 Trend bonus: +{trend_bonus:.0f}% (Aligned: {trend_aligned})")
         
-        # Step 4: Apply support/resistance bonus
         sr_bonus = self._calculate_sr_bonus(
             direction,
             price_analysis.key_level_distance,
@@ -120,20 +136,21 @@ class SignalGenerator:
             price_analysis.resistance_level,
             price_analysis.candles[-1].close if price_analysis.candles else 0
         )
+        print(f"🎯 S/R bonus: +{sr_bonus:.0f}%")
         
-        # Step 5: Apply momentum bonus
         momentum_bonus = self._calculate_momentum_bonus(
             direction,
             price_analysis.momentum
         )
+        print(f"⚡ Momentum bonus: +{momentum_bonus:.0f}%")
         
-        # Step 6: Apply market structure bonus
         structure_bonus = self._calculate_structure_bonus(
             direction,
             price_analysis.market_structure
         )
+        print(f"🏗️ Structure bonus: +{structure_bonus:.0f}%")
         
-        # Step 7: Calculate final confidence
+        # Step 4: Calculate final confidence
         final_confidence = self._calculate_final_confidence(
             base_confidence,
             trend_bonus,
@@ -142,13 +159,17 @@ class SignalGenerator:
             structure_bonus
         )
         
-        # Step 8: Determine if should trade
+        print(f"\n💪 FINAL CONFIDENCE: {final_confidence:.0f}%")
+        print(f"   Threshold: {self.min_tradeable_confidence}%")
+        
+        # Step 5: Determine if tradeable
         should_trade = final_confidence >= self.min_tradeable_confidence
         
-        # Step 9: Get confidence level
+        print(f"✅ Should trade: {should_trade}")
+        
         confidence_level = self._get_confidence_level(final_confidence)
         
-        # Step 10: Build reasoning
+        # Step 6: Build reasoning & warnings
         reasoning = self._build_reasoning(
             pattern_reasons,
             trend_aligned,
@@ -158,7 +179,6 @@ class SignalGenerator:
             price_analysis
         )
         
-        # Step 11: Build warnings
         warnings = self._build_warnings(
             final_confidence,
             trend_aligned,
@@ -166,16 +186,17 @@ class SignalGenerator:
             price_analysis
         )
         
-        # Step 12: Calculate pattern strength
         pattern_strength = sum(strength for _, strength in price_analysis.detected_patterns) / len(price_analysis.detected_patterns) if price_analysis.detected_patterns else 0
         
-        # Step 13: Create signal
+        print(f"{'='*50}\n")
+        
+        # Create signal
         signal = TradingSignal(
             direction=direction,
             confidence=final_confidence,
             confidence_level=confidence_level,
             entry_time=timing_info.next_candle_open,
-            expiry_time=timing_info.next_candle_open,  # Will be calculated based on timeframe
+            expiry_time=timing_info.next_candle_open,
             timeframe=timing_info.timeframe,
             reasoning=reasoning,
             warnings=warnings,
@@ -186,13 +207,12 @@ class SignalGenerator:
             formatted_message=""
         )
         
-        # Step 14: Format message
         signal.formatted_message = self._format_signal_message(signal, timing_info, price_analysis)
         
         return signal
     
     def _is_timing_valid(self, timing_info) -> bool:
-        """Check if timing is valid for trading"""
+        """Check timing validity"""
         from module2 import SignalValidity
         return timing_info.signal_validity in [
             SignalValidity.VALID,
@@ -201,9 +221,7 @@ class SignalGenerator:
     
     def _analyze_patterns(self, detected_patterns: List[Tuple]) -> Tuple[SignalDirection, float, List[str]]:
         """
-        Analyze detected patterns and determine direction + base confidence
-        
-        Returns: (direction, confidence, reasons)
+        Analyze patterns - UPDATED for new pattern types
         """
         if not detected_patterns:
             return SignalDirection.NO_TRADE, 0, []
@@ -216,47 +234,89 @@ class SignalGenerator:
             pattern_name = pattern_type.name if hasattr(pattern_type, 'name') else str(pattern_type)
             weight = self.pattern_weights.get(pattern_name, 10)
             
-            # Calculate weighted score
             weighted_strength = (strength / 100) * weight
             
-            # Determine if bullish or bearish
-            if 'BULLISH' in pattern_name or pattern_name in ['HAMMER', 'MORNING_STAR']:
+            # Bullish patterns
+            if any(x in pattern_name for x in ['BULLISH', 'HAMMER', 'MORNING']):
                 bullish_score += weighted_strength
-                reasons.append(f"✓ {pattern_name.replace('_', ' ').title()} ({strength:.0f}% strength)")
-            elif 'BEARISH' in pattern_name or pattern_name in ['SHOOTING_STAR', 'EVENING_STAR']:
+                reasons.append(f"✓ {pattern_name.replace('_', ' ').title()} ({strength:.0f}%)")
+            
+            # Bearish patterns
+            elif any(x in pattern_name for x in ['BEARISH', 'SHOOTING', 'EVENING']):
                 bearish_score += weighted_strength
-                reasons.append(f"✓ {pattern_name.replace('_', ' ').title()} ({strength:.0f}% strength)")
+                reasons.append(f"✓ {pattern_name.replace('_', ' ').title()} ({strength:.0f}%)")
+            
+            # Neutral
             else:
-                # Neutral patterns (Doji, Inside Bar)
                 reasons.append(f"⚠️ {pattern_name.replace('_', ' ').title()} (Neutral)")
         
-        # Determine direction
-        if bullish_score > bearish_score and bullish_score > 15:
+        # UPDATED: Lower threshold from 15 to 8
+        if bullish_score > bearish_score and bullish_score > 8:
             direction = SignalDirection.UP
-            confidence = min(bullish_score, 60)  # Base confidence capped at 60
-        elif bearish_score > bullish_score and bearish_score > 15:
+            confidence = min(bullish_score, 55)  # Cap at 55 for base
+        elif bearish_score > bullish_score and bearish_score > 8:
             direction = SignalDirection.DOWN
-            confidence = min(bearish_score, 60)
+            confidence = min(bearish_score, 55)
         else:
             direction = SignalDirection.NO_TRADE
             confidence = 0
         
         return direction, confidence, reasons
     
+    def _fallback_trend_signal(self, price_analysis) -> Tuple[SignalDirection, float, List[str]]:
+        """
+        NEW: Fallback to trend-based signal when no patterns detected
+        """
+        from module1 import TrendDirection
+        
+        trend = price_analysis.trend
+        trend_strength = price_analysis.trend_strength
+        
+        reasons = []
+        
+        # Strong trends
+        if trend in [TrendDirection.STRONG_UPTREND, TrendDirection.UPTREND]:
+            if trend_strength > 60:
+                reasons.append(f"✓ Strong uptrend detected ({trend_strength:.0f}%)")
+                return SignalDirection.UP, 35, reasons  # Base 35%
+            elif trend_strength > 40:
+                reasons.append(f"✓ Uptrend present ({trend_strength:.0f}%)")
+                return SignalDirection.UP, 25, reasons
+        
+        elif trend in [TrendDirection.STRONG_DOWNTREND, TrendDirection.DOWNTREND]:
+            if trend_strength > 60:
+                reasons.append(f"✓ Strong downtrend detected ({trend_strength:.0f}%)")
+                return SignalDirection.DOWN, 35, reasons
+            elif trend_strength > 40:
+                reasons.append(f"✓ Downtrend present ({trend_strength:.0f}%)")
+                return SignalDirection.DOWN, 25, reasons
+        
+        # Last resort: check last 3 candles direction
+        if len(price_analysis.candles) >= 3:
+            recent = price_analysis.candles[-3:]
+            bullish_count = sum(1 for c in recent if c.is_bullish)
+            
+            if bullish_count >= 2:
+                reasons.append(f"✓ Recent bullish momentum ({bullish_count}/3 green candles)")
+                return SignalDirection.UP, 30, reasons
+            elif bullish_count <= 1:
+                reasons.append(f"✓ Recent bearish momentum ({3-bullish_count}/3 red candles)")
+                return SignalDirection.DOWN, 30, reasons
+        
+        return SignalDirection.NO_TRADE, 0, []
+    
     def _calculate_trend_bonus(self, direction: SignalDirection, trend, trend_strength: float) -> Tuple[float, bool]:
-        """Calculate bonus for trend alignment"""
+        """Calculate trend bonus"""
         from module1 import TrendDirection
         
         bonus = 0
         aligned = False
         
-        # UP signal
         if direction == SignalDirection.UP:
             if trend in [TrendDirection.UPTREND, TrendDirection.STRONG_UPTREND]:
                 aligned = True
                 bonus = self.trend_alignment_bonus + (trend_strength * self.trend_strength_multiplier)
         
-        # DOWN signal
         elif direction == SignalDirection.DOWN:
             if trend in [TrendDirection.DOWNTREND, TrendDirection.STRONG_DOWNTREND]:
                 aligned = True
@@ -267,27 +327,25 @@ class SignalGenerator:
     def _calculate_sr_bonus(self, direction: SignalDirection, distance: float, 
                            support: Optional[float], resistance: Optional[float], 
                            current_price: float) -> float:
-        """Calculate bonus for being near support/resistance"""
+        """Calculate S/R bonus"""
         
-        if distance > 0.5:  # More than 0.5% away from key level
+        if distance > 0.5:
             return 0
         
         bonus = 0
         
-        # UP signal near support
         if direction == SignalDirection.UP and support:
-            if abs(current_price - support) / current_price * 100 < 0.2:
+            if abs(current_price - support) / current_price * 100 < 0.3:  # Relaxed from 0.2
                 bonus = self.key_level_proximity_bonus
         
-        # DOWN signal near resistance
         elif direction == SignalDirection.DOWN and resistance:
-            if abs(current_price - resistance) / current_price * 100 < 0.2:
+            if abs(current_price - resistance) / current_price * 100 < 0.3:
                 bonus = self.key_level_proximity_bonus
         
         return bonus
     
     def _calculate_momentum_bonus(self, direction: SignalDirection, momentum: str) -> float:
-        """Calculate bonus for momentum alignment"""
+        """Calculate momentum bonus"""
         bonus = 0
         
         if direction == SignalDirection.UP and momentum == "Increasing":
@@ -298,7 +356,7 @@ class SignalGenerator:
         return bonus
     
     def _calculate_structure_bonus(self, direction: SignalDirection, structure: str) -> float:
-        """Calculate bonus for market structure alignment"""
+        """Calculate structure bonus"""
         bonus = 0
         
         if direction == SignalDirection.UP and "Uptrend" in structure:
@@ -310,19 +368,21 @@ class SignalGenerator:
     
     def _calculate_final_confidence(self, base: float, trend: float, sr: float, 
                                    momentum: float, structure: float) -> float:
-        """Calculate final confidence score"""
+        """Calculate final confidence"""
         total = base + trend + sr + momentum + structure
-        return min(total, 100)  # Cap at 100%
+        return min(total, 100)
     
     def _get_confidence_level(self, confidence: float) -> ConfidenceLevel:
-        """Get confidence level enum"""
-        if confidence >= self.very_high_confidence_threshold:
+        """Get confidence level - UPDATED thresholds"""
+        if confidence >= 80:
             return ConfidenceLevel.VERY_HIGH
-        elif confidence >= self.high_confidence_threshold:
+        elif confidence >= 70:
             return ConfidenceLevel.HIGH
-        elif confidence >= 65:
+        elif confidence >= 60:
             return ConfidenceLevel.MODERATE
-        elif confidence >= 55:
+        elif confidence >= 50:
+            return ConfidenceLevel.MEDIUM
+        elif confidence >= 40:
             return ConfidenceLevel.LOW
         else:
             return ConfidenceLevel.VERY_LOW
@@ -330,7 +390,7 @@ class SignalGenerator:
     def _build_reasoning(self, pattern_reasons: List[str], trend_aligned: bool,
                         near_sr: bool, momentum_good: bool, structure_good: bool,
                         price_analysis) -> List[str]:
-        """Build complete reasoning list"""
+        """Build reasoning"""
         reasoning = pattern_reasons.copy()
         
         if trend_aligned:
@@ -339,44 +399,46 @@ class SignalGenerator:
             reasoning.append(f"⚠️ Against trend: {price_analysis.trend.value}")
         
         if near_sr:
-            reasoning.append("✓ Near key support/resistance level")
+            reasoning.append("✓ Near key support/resistance")
         
         if momentum_good:
             reasoning.append(f"✓ Momentum: {price_analysis.momentum}")
         
         if structure_good:
-            reasoning.append(f"✓ Market structure: {price_analysis.market_structure}")
+            reasoning.append(f"✓ Structure: {price_analysis.market_structure}")
         
         return reasoning
     
     def _build_warnings(self, confidence: float, trend_aligned: bool,
                        timing_info, price_analysis) -> List[str]:
-        """Build warning list"""
+        """Build warnings - UPDATED for lower confidence"""
         warnings = []
         
-        if confidence < 70:
+        if confidence < 50:
+            warnings.append("⚠️ Low confidence - use small position size")
+        elif confidence < 60:
             warnings.append("⚠️ Moderate confidence - trade with caution")
         
         if not trend_aligned:
-            warnings.append("⚠️ Trading against the trend - higher risk")
+            warnings.append("⚠️ Trading against trend - higher risk")
         
         if timing_info.time_lag > 10:
             warnings.append(f"⚠️ Signal lag: {timing_info.time_lag:.0f}s")
         
         from module2 import SignalValidity
         if timing_info.signal_validity == SignalValidity.EXPIRING_SOON:
-            warnings.append("⚡ Signal expiring soon - enter quickly!")
+            warnings.append("⚡ Signal expiring - enter quickly!")
         
         if price_analysis.trend.name == "SIDEWAYS":
-            warnings.append("⚠️ Sideways market - unpredictable")
+            warnings.append("⚠️ Sideways market - less predictable")
         
         if not warnings:
-            warnings.append("✅ Good trading conditions")
+            warnings.append("✅ Good trading setup")
         
         return warnings
     
     def _create_no_trade_signal(self, reason: str, timing_info) -> TradingSignal:
-        """Create a NO TRADE signal"""
+        """Create NO TRADE signal"""
         signal = TradingSignal(
             direction=SignalDirection.NO_TRADE,
             confidence=0,
@@ -397,7 +459,7 @@ class SignalGenerator:
         return signal
     
     def _format_signal_message(self, signal: TradingSignal, timing_info, price_analysis) -> str:
-        """Format signal into Telegram message"""
+        """Format signal message - UPDATED for new confidence levels"""
         
         if not signal.should_trade:
             return signal.formatted_message if signal.formatted_message else "⏸️ NO TRADE"
@@ -405,53 +467,57 @@ class SignalGenerator:
         msg = "🎯 **TRADING SIGNAL**\n"
         msg += "=" * 40 + "\n\n"
         
-        # Direction and Confidence
         msg += f"**Direction:** {signal.direction.value}\n"
         msg += f"**Confidence:** {signal.confidence:.0f}% ({signal.confidence_level.value})\n"
-        msg += f"**Timeframe:** {signal.timeframe}\n\n"
+        msg += f"**Timeframe:** {signal.timeframe}\n"
+        msg += f"**Candles Analyzed:** {price_analysis.total_candles_analyzed}\n\n"
         
-        # Timing
         msg += "⏰ **TIMING:**\n"
         msg += f"   Entry: {signal.entry_time.strftime('%H:%M:%S')}\n"
         msg += f"   Countdown: {timing_info.seconds_until_entry:.0f}s\n"
         msg += f"   {timing_info.entry_message}\n\n"
         
-        # Reasoning
         msg += "📊 **ANALYSIS:**\n"
-        for reason in signal.reasoning[:5]:  # Top 5 reasons
+        for reason in signal.reasoning[:5]:
             msg += f"   {reason}\n"
         
-        # Warnings
         if signal.warnings:
             msg += "\n⚠️ **WARNINGS:**\n"
             for warning in signal.warnings:
                 msg += f"   {warning}\n"
         
-        # Trade recommendation
         msg += "\n" + "=" * 40 + "\n"
         
+        # UPDATED recommendations for lower confidence
         if signal.confidence >= 80:
-            msg += "✅ **STRONG SIGNAL - RECOMMENDED TRADE**\n"
+            msg += "✅ **VERY STRONG SIGNAL**\n"
+            msg += "💰 High confidence trade\n"
         elif signal.confidence >= 70:
-            msg += "✅ **GOOD SIGNAL - TRADE WITH CONFIDENCE**\n"
+            msg += "✅ **STRONG SIGNAL**\n"
+            msg += "👍 Recommended trade\n"
         elif signal.confidence >= 60:
-            msg += "⚠️ **MODERATE SIGNAL - TRADE WITH CAUTION**\n"
+            msg += "✅ **GOOD SIGNAL**\n"
+            msg += "👌 Solid setup\n"
+        elif signal.confidence >= 50:
+            msg += "⚠️ **MODERATE SIGNAL**\n"
+            msg += "🤔 Trade with caution\n"
+        elif signal.confidence >= 40:
+            msg += "⚠️ **LOW CONFIDENCE**\n"
+            msg += "🎲 High risk - small position\n"
         else:
-            msg += "⏸️ **WEAK SIGNAL - CONSIDER SKIPPING**\n"
+            msg += "❌ **TOO WEAK**\n"
+            msg += "⏸️ Skip this trade\n"
         
-        msg += "\n💡 *Trade at your own risk. This is not financial advice.*"
+        msg += "\n💡 *Trade at your own risk. Not financial advice.*"
         
         return msg
 
 
-# COMPLETE INTEGRATION
+# INTEGRATION CLASS
 class PocketOptionTradingBot:
-    """
-    Main bot class that integrates all modules
-    """
+    """Complete bot integration"""
     
     def __init__(self):
-        # Import all modules
         from module1 import PocketOptionChartAnalyzer
         from module2 import TimingSystemIntegrator
         
@@ -460,15 +526,13 @@ class PocketOptionTradingBot:
         self.signal_generator = SignalGenerator()
     
     def analyze_and_generate_signal(self, image_path: str) -> TradingSignal:
-        """
-        Complete analysis pipeline: Chart -> Signal
-        """
+        """Complete analysis pipeline"""
         
-        # Step 1: Analyze price action
+        # Analyze price action
         price_analysis = self.price_analyzer.analyze_chart(image_path)
         
-        # Step 2: Analyze timing
-        candle_completion = 90.0  # Can calculate from last candle
+        # Analyze timing
+        candle_completion = 90.0
         if price_analysis.candles:
             last_candle = price_analysis.candles[-1]
             if last_candle.total_range > 0:
@@ -476,32 +540,7 @@ class PocketOptionTradingBot:
         
         timing_info = self.timing_system.analyze_chart_timing(image_path, candle_completion)
         
-        # Step 3: Generate signal
+        # Generate signal
         signal = self.signal_generator.generate_signal(price_analysis, timing_info)
         
         return signal
-
-
-# USAGE EXAMPLE
-if __name__ == "__main__":
-    
-    # Initialize complete bot
-    bot = PocketOptionTradingBot()
-    
-    # Analyze chart
-    signal = bot.analyze_and_generate_signal("chart.png")
-    
-    # Print result
-    print(signal.formatted_message)
-    
-    print("\n" + "="*50)
-    print("DECISION:")
-    print("="*50)
-    
-    if signal.should_trade:
-        print(f"✅ TRADE: {signal.direction.value}")
-        print(f"💪 Confidence: {signal.confidence:.0f}%")
-        print(f"⏰ Entry: {signal.entry_time.strftime('%H:%M:%S')}")
-    else:
-        print("❌ DON'T TRADE")
-        print(f"Reason: {signal.reasoning[0] if signal.reasoning else 'No clear signal'}")
