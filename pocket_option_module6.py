@@ -17,7 +17,6 @@ from module1 import PocketOptionChartAnalyzer
 from module2 import TimingSystemIntegrator
 from module3 import SignalGenerator, SignalDirection
 from module5 import TradingDatabase, SmartConfidenceAdjuster, TradeRecord, TradeResult
-
 # CONFIGURATION
 BOT_TOKEN = "6506132532:AAGjfMXlSkefR5uldDwCRhxdk7YRES5385k"
 AUTHORIZED_USER_ID = 6837532865
